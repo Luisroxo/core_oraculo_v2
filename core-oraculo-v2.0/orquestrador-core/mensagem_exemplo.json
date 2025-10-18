@@ -1,0 +1,9 @@
+{
+  "correlation_id": "abc123",
+  "tipo_evento": "iniciar_coleta",
+  "payload": {
+    "fonte": "youtube",
+    "parametros": {"canal": "canal_exemplo", "periodo": "2025-10"}
+  },
+  "timestamp": "2025-10-14T12:00:00Z"
+}

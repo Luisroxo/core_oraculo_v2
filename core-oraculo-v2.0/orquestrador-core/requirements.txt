@@ -1,0 +1,7 @@
+fastapi
+celery[rabbitmq,redis]
+prometheus-fastapi-instrumentator
+python-json-logger
+redis
+pika
+elasticsearch

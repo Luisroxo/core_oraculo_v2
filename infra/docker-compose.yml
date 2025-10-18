@@ -1,0 +1,124 @@
+version: '3.9'
+
+services:
+  api-gateway:
+    build: ../core-oraculo-v2.0/api-gateway
+    container_name: oraculo-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=dev
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres
+
+  orquestrador:
+    build: ../core-oraculo-v2.0/orquestrador
+    container_name: oraculo-orquestrador
+    environment:
+      - ENV=dev
+    depends_on:
+      - rabbitmq
+      - redis
+      - postgres
+
+  # Escavadores
+  escavador-youtube:
+    build: ../core-oraculo-v2.0/escavadores/youtube
+    container_name: oraculo-escavador-youtube
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  escavador-blog:
+    build: ../core-oraculo-v2.0/escavadores/blog
+    container_name: oraculo-escavador-blog
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  escavador-telegram:
+    build: ../core-oraculo-v2.0/escavadores/telegram
+    container_name: oraculo-escavador-telegram
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  escavador-instagram:
+    build: ../core-oraculo-v2.0/escavadores/instagram
+    container_name: oraculo-escavador-instagram
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  escavador-licitacoes:
+    build: ../core-oraculo-v2.0/escavadores/licitacoes
+    container_name: oraculo-escavador-licitacoes
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  # Executadores
+  executador-relatorios:
+    build: ../core-oraculo-v2.0/executadores/relatorios
+    container_name: oraculo-executador-relatorios
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  executador-conteudo-ia:
+    build: ../core-oraculo-v2.0/executadores/conteudo-ia
+    container_name: oraculo-executador-conteudo-ia
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  executador-midias-sociais:
+    build: ../core-oraculo-v2.0/executadores/midias-sociais
+    container_name: oraculo-executador-midias-sociais
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  executador-automacoes:
+    build: ../core-oraculo-v2.0/executadores/automacoes
+    container_name: oraculo-executador-automacoes
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  executador-erp-crm:
+    build: ../core-oraculo-v2.0/executadores/erp-crm
+    container_name: oraculo-executador-erp-crm
+    depends_on:
+      - rabbitmq
+      - postgres
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: oraculo-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  redis:
+    image: redis:7
+    container_name: oraculo-redis
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:15
+    container_name: oraculo-postgres
+    environment:
+      - POSTGRES_USER=oraculo
+      - POSTGRES_PASSWORD=oraculo
+      - POSTGRES_DB=oraculo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

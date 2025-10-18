@@ -1,0 +1,1 @@
+console.log("Executador Mídias Sociais rodando!");

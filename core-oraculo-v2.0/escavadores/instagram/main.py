@@ -1,0 +1,1 @@
+print("Escavador Instagram rodando!")

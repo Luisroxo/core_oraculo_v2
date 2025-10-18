@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Mensagem de Orquestração ORÁCULO",
+  "type": "object",
+  "properties": {
+    "correlation_id": {"type": "string", "description": "ID único para rastreamento de fluxo"},
+    "tipo_evento": {"type": "string", "description": "Tipo do evento (ex: iniciar_coleta, resultado_coleta, iniciar_execucao, resultado_execucao)"},
+    "payload": {"type": "object", "description": "Conteúdo do evento, estrutura flexível"},
+    "timestamp": {"type": "string", "format": "date-time", "description": "Data/hora ISO8601"}
+  },
+  "required": ["correlation_id", "tipo_evento", "payload", "timestamp"]
+}

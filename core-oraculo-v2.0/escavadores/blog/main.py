@@ -1,0 +1,1 @@
+print("Escavador Blog rodando!")
