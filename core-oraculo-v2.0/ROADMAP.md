@@ -32,7 +32,7 @@
 	- [x] Distribuição de tarefas e agregação de resultados
 	- [x] Interface com mensageria
 	- [x] Criar microsserviços Escavadores
-	- [ ] YouTube
+	- [x] YouTube (100% validado)
 	- [ ] Blog
 	- [ ] Telegram
 	- [ ] Instagram

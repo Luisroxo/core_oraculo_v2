@@ -4,12 +4,23 @@
             "ssh": "Disabled",
             "previewLimit": 50,
             "server": "localhost",
-            "port": 5432,
+            "port": 5433,
             "driver": "PostgreSQL",
-            "name": "oraculo",
-            "username": "postgres",
-            "database": "oraculo",
-            "password": "020646"
+            "name": "youtubebd",
+            "database": "youtubebd",
+            "username": "postgre1",
+            "password": "770920@Juan"
+        },
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5433,
+            "driver": "PostgreSQL",
+            "name": "blogdb",
+            "database": "blogdb",
+            "password": "020646@Juan",
+            "username": "blogpostgre"
         }
     ]
 }
