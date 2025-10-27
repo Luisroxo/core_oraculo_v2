@@ -1,3 +1,4 @@
+import psycopg2
 import asyncio
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
@@ -58,6 +59,51 @@ async def extract_article_links():
             links.add((full_url, tipo))
     return list(links)
 
+# NOVA FUNÇÃO: Coleta links de artigos em todas as categorias do banco
+async def extract_links_from_categories():
+    # Conecta ao banco para buscar links de categoria
+    conn = psycopg2.connect(os.getenv('DB_URL'))
+    cur = conn.cursor()
+    cur.execute("SELECT url FROM links_coletados WHERE tipo = 'categoria'")
+    categorias = [row[0] for row in cur.fetchall()]
+    print(f'Encontradas {len(categorias)} categorias para varrer.')
+    total_novos = 0
+    for url_categoria in categorias:
+        print(f'Coletando artigos da categoria: {url_categoria}')
+        page_num = 1
+        while True:
+            url_pagina = url_categoria
+            if page_num > 1:
+                url_pagina = url_categoria.rstrip('/') + f'/?page={page_num}'
+            html = await get_html_with_playwright(url_pagina)
+            soup = BeautifulSoup(html, "html.parser")
+            novos_links = set()
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                if href.startswith('/br/blog/') and not href.rstrip('/').split('/')[-1] in ['blog', 'noticias']:
+                    slug = href.rstrip('/').split('/')[-1]
+                    if slug not in [c.split('/')[-1] for c in categorias]:
+                        full_url = f'https://www.kommo.com{href}'
+                        novos_links.add(full_url)
+            # Salva novos links no banco
+            novos_inseridos = 0
+            for link in novos_links:
+                try:
+                    cur.execute('INSERT INTO links_coletados (url, tipo) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;', (link, 'conteudo'))
+                    novos_inseridos += cur.rowcount
+                except Exception as e:
+                    print(f'Erro ao inserir {link}: {e}')
+            conn.commit()
+            print(f'Página {page_num}: {len(novos_links)} links encontrados, {novos_inseridos} inseridos.')
+            total_novos += novos_inseridos
+            # Verifica se há paginação (se não encontrar novos links, para)
+            if not novos_links:
+                break
+            page_num += 1
+    cur.close()
+    conn.close()
+    print(f'Total de novos links de artigos inseridos a partir das categorias: {total_novos}')
+
 async def main():
     # Conecta e cria tabela
     conn = get_conn()
@@ -66,7 +112,7 @@ async def main():
     conn.commit()
     print('Tabela links_coletados pronta.')
 
-    # Coleta links
+    # Coleta links da página principal
     print('Coletando links de artigos e categorias...')
     links = await extract_article_links()
     print(f'Total de links encontrados: {len(links)}')
@@ -79,6 +125,9 @@ async def main():
             print(f'Erro ao inserir {link}: {e}')
     conn.commit()
     print('Links salvos no banco.')
+
+    # Coleta links de artigos em todas as categorias
+    await extract_links_from_categories()
     cur.close()
     conn.close()
 
