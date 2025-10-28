@@ -1,3 +1,4 @@
+
 import os
 from dotenv import load_dotenv
 from urllib.parse import urlparse
@@ -28,8 +29,7 @@ class Settings:
             self.DB_HOST = parsed.hostname or "localhost"
             self.DB_NAME = parsed.path.lstrip('/')
             self.DB_USER = parsed.username or "postgres"
-            from urllib.parse import unquote
-            self.DB_PASSWORD = unquote(parsed.password or "")
+            self.DB_PASSWORD = parsed.password or ""
             self.DB_PORT = parsed.port or 5432
         else:
             self.DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -51,7 +51,5 @@ class Settings:
         self.PAUSA_ENTRE_VIDEOS = int(os.getenv("PAUSA_ENTRE_VIDEOS", 10))
         self.PAUSA_ENTRE_LOTES = int(os.getenv("PAUSA_ENTRE_LOTES", 60))
         self.MAX_RETRIES = int(os.getenv("MAX_RETRIES", 3))
-        # Adiciona atributo para compatibilidade com o scraper
-        self.MAX_VIDEOS_PER_PAGE = self.LOTE_TAMANHO
 
 settings = Settings()

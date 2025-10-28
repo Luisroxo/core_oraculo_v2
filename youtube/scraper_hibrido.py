@@ -67,46 +67,41 @@ def baixar_audio_ytdlp(video_id, pasta_destino="audios"):
 
 class DefinitiveChrono:
     def __init__(self):
-        print("[AUDITORIA] DB_USER:", settings.DB_USER)
-        print("[AUDITORIA] DB_PASSWORD:", settings.DB_PASSWORD)
-        print("[AUDITORIA] DB_HOST:", settings.DB_HOST)
-        print("[AUDITORIA] DB_PORT:", settings.DB_PORT)
-        print("[AUDITORIA] DB_NAME:", settings.DB_NAME)
         self.checkpoint = CollectionCheckpoint()
         self.db = Database(settings)
         self.logger = logging.getLogger(__name__)
-
 
     def collect_all_historical(self, channel_id):
         """
         Coleta todos os vídeos históricos de um canal.
         """
+        video_ids = []
         video_count = 0
         max_videos = settings.MAX_VIDEOS_PER_PAGE
+
         while True:
+            # Buscar vídeos mais antigos primeiro usando publishedBefore
             published_before = self._get_oldest_video_date(channel_id)
+
             if not published_before:
                 break
-            # Aqui você deve implementar a busca dos IDs dos vídeos publicados antes de published_before
-            # Exemplo fictício:
-            video_ids = self._get_video_ids_before_date(channel_id, published_before, max_videos)
-            if not video_ids or not isinstance(video_ids, list):
-                break
-            video_count += len(video_ids)
-            video_ids = [video_id for video_id in video_ids if video_id not in self.db.get_video_ids()]
+
+            # Coletar em lotes de 50 em ordem cronológica crescente  
+            video_ids = self._get_video_details(published_before, max_videos)
+
             if not video_ids:
                 break
+
+            video_count += len(video_ids)
+            video_ids = [video_id for video_id in video_ids if video_id not in self.db.get_video_ids()]
+
+            if not video_ids:
+                break
+
             self.db.add_videos(video_ids)
             self.logger.info(f"Coletados {video_count} vídeos")
-            time.sleep(1)
 
-    def _get_video_ids_before_date(self, channel_id, published_before, max_videos):
-        """
-        Busca IDs de vídeos do canal publicados antes de uma data.
-        Substitua este método pela lógica real de busca na API do YouTube.
-        """
-        # Exemplo fictício: retorna lista vazia (deve ser implementado)
-        return []
+            time.sleep(1)
 
     def _get_oldest_video_date(self, channel_id):
         """

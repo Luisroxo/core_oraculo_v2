@@ -1,0 +1,17 @@
+version: '3.9'
+
+services:
+  postgres-youtube:
+    image: postgres:15
+    container_name: youtube-postgres
+    environment:
+      - POSTGRES_USER=postgre1
+      - POSTGRES_PASSWORD=770920@Juan
+      - POSTGRES_DB=youtubebd
+    ports:
+      - "5433:5432"
+    volumes:
+      - youtube_pgdata:/var/lib/postgresql/data
+
+volumes:
+  youtube_pgdata:

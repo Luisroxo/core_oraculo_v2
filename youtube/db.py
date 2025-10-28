@@ -2,16 +2,6 @@ import psycopg2
 from datetime import datetime
 
 class Database:
-    def get_oldest_video_date(self, channel_id):
-        """
-        Retorna a data do vídeo mais antigo de um canal.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute(
-                "SELECT MIN(data_publicacao) FROM transcricoes WHERE canal = %s", (channel_id,)
-            )
-            result = cursor.fetchone()
-            return result[0] if result and result[0] else None
     def __init__(self, settings):
         self.settings = settings
         self.conn = psycopg2.connect(
