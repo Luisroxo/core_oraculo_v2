@@ -1,39 +1,23 @@
-async def extract_article_links():
-    html = await get_html_with_playwright(BLOG_URL)
-    soup = BeautifulSoup(html, "html.parser")
-    links = set()
-    categorias = [
-        'comunidade', 'ia', 'instagram', 'linkedin', 'listas', 'news', 'novidades',
-        'perfil-comercial-no-google', 'shopify', 'tiktok', 'todos', 'vendas', 'vendas-conversacionais',
-        'whatsapp', 'alternativas', 'empreendedorismo', 'fundamentos-crm', 'integracoes', 'marketing',
-        'noticias', 'parceiros', 'robo-de-vendas', 'crm', 'botao-de-chat-web'
-    ]
-    for a in soup.find_all('a', href=True):
-        href = a['href']
-        if href.startswith('/br/blog/'):
-            slug = href.rstrip('/').split('/')[-1]
-            if slug in categorias:
-                tipo = 'categoria'
-            else:
-                tipo = 'conteudo'
-            full_url = f'https://www.kommo.com{href}'
-            links.add((full_url, tipo))
-    return list(links)
 import psycopg2
 import asyncio
 from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 import os
 from dotenv import load_dotenv
+import re 
 
-# Carrega variáveis do .env
+# --- Configurações ---
 load_dotenv()
 DB_URL = os.getenv('DB_URL')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-
 BLOG_URL = "https://www.kommo.com/br/blog/"
+TIPO_PADRAO = 'pendente' # Novo tipo padrão para links não classificados
 
-def get_conn():
+# --- Funções de Banco de Dados ---
+
+def get_conn( ):
+    """Retorna uma nova conexão com o banco de dados PostgreSQL."""
+    if not DB_URL:
+        raise ValueError("DB_URL não definida! Verifique o arquivo .env.")
     return psycopg2.connect(DB_URL)
 
 CREATE_TABLE_SQL = '''
@@ -45,279 +29,94 @@ CREATE TABLE IF NOT EXISTS links_coletados (
 );
 '''
 
-async def get_html_with_playwright(url):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(url)
-        await page.wait_for_load_state('load', timeout=60000)
-        html = await page.content()
-        await browser.close()
-        return html
+# --- Funções de Web Scraping ---
 
-async def extract_links_from_category(url_categoria):
-    print(f'Coletando artigos da categoria: {url_categoria}')
-    pagina = 1
-    paginas_visitadas = set()
-    conn = psycopg2.connect(DB_URL)
-    cur = conn.cursor()
-    url_pagina = url_categoria
-    total_novos = 0
-    while url_pagina and url_pagina not in paginas_visitadas:
-        print(f'Coletando página {pagina}: {url_pagina}')
-        paginas_visitadas.add(url_pagina)
-        html = await get_html_with_playwright(url_pagina)
-        soup = BeautifulSoup(html, "html.parser")
-        novos_links = set()
-        for a in soup.select('a.article-card'):
-            href = a.get('href')
-            if href and href.startswith('/br/blog/'):
-                full_url = f'https://www.kommo.com{href}'
-                novos_links.add(full_url)
-        destaque_topo = soup.select_one('.article-card__preview--big a[href]')
-        if destaque_topo:
-            href = destaque_topo.get('href')
-            if href and href.startswith('/br/blog/'):
-                full_url = f'https://www.kommo.com{href}'
-                novos_links.add(full_url)
-        destaque_rodape = soup.select_one('.article-card-big a[href]')
-        if destaque_rodape:
-            href = destaque_rodape.get('href')
-            if href and href.startswith('/br/blog/'):
-                full_url = f'https://www.kommo.com{href}'
-                novos_links.add(full_url)
-        novos_inseridos = 0
-        for link in novos_links:
-            try:
-                cur.execute('INSERT INTO links_coletados (url, tipo) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;', (link, 'conteudo'))
-                novos_inseridos += cur.rowcount
-            except Exception as e:
-                print(f'Erro ao inserir {link}: {e}')
-        conn.commit()
-        print(f'Página {pagina}: {len(novos_links)} links encontrados, {novos_inseridos} inseridos.')
-        total_novos += novos_inseridos
-        # Busca o link da próxima página na paginação (apenas o maior número)
-        next_page = None
-        paginacao = soup.select('ul.flex li a[href*="/page/"]')
-        max_num = pagina
-        for a in paginacao:
-            href = a.get('href')
-            if href and href.startswith('/br/blog/'):
-                import re
-                match = re.search(r'/page/(\d+)', href)
-                if match:
-                    num = int(match.group(1))
-                    if num > max_num:
-                        max_num = num
-                        next_page = f'https://www.kommo.com{href}'
-        if next_page and next_page not in paginas_visitadas:
-            url_pagina = next_page
-            pagina = max_num
-        else:
-            break
-    cur.close()
-    conn.close()
-    print(f'Total de novos links de artigos inseridos da categoria: {total_novos}')
+async def get_html_with_playwright(page, url):
+    """Obtém o HTML de uma URL usando uma instância de página Playwright já aberta."""
+    await page.goto(url)
+    # Mantendo a espera por seletor e o fechamento de modal para garantir o carregamento completo
+    try:
+        await page.wait_for_selector('.blog-article__content, .article-card', timeout=15000)
+    except Exception:
+        pass # Ignora seletor principal se não encontrado
+        
+    # Tenta detectar e fechar o modal (mantido do seu código)
+    try:
+        await page.wait_for_selector('button.ub-emb-close', timeout=5000)
+        await page.click('button.ub-emb-close', force=True)
+    except Exception:
+        pass 
+        
+    html = await page.content()
+    return html
 
-async def extract_links_from_all_categories():
-    conn = psycopg2.connect(DB_URL)
-    cur = conn.cursor()
-    cur.execute("SELECT url FROM links_coletados WHERE tipo = 'categoria'")
-    categorias = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    print(f'Encontradas {len(categorias)} categorias para varrer.')
-    for url_categoria in categorias:
-        await extract_links_from_category(url_categoria)
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "todas":
-        async def fluxo_completo():
-            # Garante que a tabela existe antes de qualquer operação
-            conn = get_conn()
-            cur = conn.cursor()
-            cur.execute(CREATE_TABLE_SQL)
-            conn.commit()
-            cur.close()
-            conn.close()
-            # Coleta links de categorias e insere no banco
-            print('Coletando links de categorias da página principal...')
-            # Lista completa de categorias
-            categorias = [
-                'comunidade', 'ia', 'instagram', 'linkedin', 'listas', 'news', 'novidades',
-                'perfil-comercial-no-google', 'shopify', 'tiktok', 'todos', 'vendas', 'vendas-conversacionais',
-                'whatsapp', 'alternativas', 'empreendedorismo', 'fundamentos-crm', 'integracoes', 'marketing',
-                'noticias', 'parceiros', 'robo-de-vendas', 'crm', 'botao-de-chat-web'
-            ]
-            # Gera URLs de todas as categorias
-            links_categorias = [(f'https://www.kommo.com/br/blog/{cat}/', 'categoria') for cat in categorias]
-            conn = get_conn()
-            cur = conn.cursor()
-            for link, tipo in links_categorias:
-                try:
-                    cur.execute('INSERT INTO links_coletados (url, tipo) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;', (link, tipo))
-                except Exception as e:
-                    print(f'Erro ao inserir categoria {link}: {e}')
-            conn.commit()
-            cur.close()
-            conn.close()
-            # Agora varre todas as categorias
-            await extract_links_from_all_categories()
-        asyncio.run(fluxo_completo())
-    elif len(sys.argv) > 1 and sys.argv[1].startswith("http"):
-        asyncio.run(extract_links_from_category(sys.argv[1]))
-    else:
-        print("Uso: python coletar_links.py todas | <url_categoria>")
-
-async def extract_links_from_all_categories():
-    conn = psycopg2.connect(os.getenv('DB_URL'))
-    cur = conn.cursor()
-    cur.execute("SELECT url FROM links_coletados WHERE tipo = 'categoria'")
-    categorias = [row[0] for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-    print(f'Encontradas {len(categorias)} categorias para varrer.')
-    for url_categoria in categorias:
-        await extract_links_from_category(url_categoria)
-import psycopg2
-import asyncio
-from playwright.async_api import async_playwright
-from bs4 import BeautifulSoup
-import psycopg2
-import os
-from dotenv import load_dotenv
-
-# Carrega variáveis do .env
-load_dotenv()
-DB_URL = os.getenv('DB_URL')
-DB_PASSWORD = os.getenv('DB_PASSWORD')
-
-BLOG_URL = "https://www.kommo.com/br/blog/"
-
-# Função para conectar ao banco
-def get_conn():
-    return psycopg2.connect(DB_URL)
-
-# Cria tabela se não existir
-CREATE_TABLE_SQL = '''
-CREATE TABLE IF NOT EXISTS links_coletados (
-    id SERIAL PRIMARY KEY,
-    url TEXT UNIQUE NOT NULL,
-    tipo VARCHAR(20) NOT NULL,
-    coletado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-'''
-
-async def get_html_with_playwright(url):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(url)
-        await page.wait_for_load_state('load', timeout=60000)
-        html = await page.content()
-        await browser.close()
-        return html
-
-async def extract_article_links():
-    html = await get_html_with_playwright(BLOG_URL)
+async def extract_all_blog_links(page):
+    """Coleta todos os links internos do blog a partir da página principal."""
+    print(f'Coletando links da página: {BLOG_URL}')
+    html = await get_html_with_playwright(page, BLOG_URL)
     soup = BeautifulSoup(html, "html.parser")
     links = set()
-    categorias = [
-        'comunidade', 'ia', 'instagram', 'linkedin', 'listas', 'news', 'novidades',
-        'perfil-comercial-no-google', 'shopify', 'tiktok', 'todos', 'vendas', 'vendas-conversacionais',
-        'whatsapp', 'alternativas', 'empreendedorismo', 'fundamentos-crm', 'integracoes', 'marketing',
-        'noticias', 'parceiros', 'robo-de-vendas', 'crm', 'botao-de-chat-web'
-    ]
+    
     for a in soup.find_all('a', href=True):
         href = a['href']
+        # Filtra apenas links que começam com /br/blog/
         if href.startswith('/br/blog/'):
-            slug = href.rstrip('/').split('/')[-1]
-            if slug in categorias:
-                tipo = 'categoria'
-            else:
-                tipo = 'conteudo'
             full_url = f'https://www.kommo.com{href}'
-            links.add((full_url, tipo))
+            links.add(full_url )
+            
     return list(links)
 
-# NOVA FUNÇÃO: Coleta links de artigos em todas as categorias do banco
-async def extract_links_from_categories():
-    # Conecta ao banco para buscar links de categoria
-    conn = psycopg2.connect(os.getenv('DB_URL'))
-    cur = conn.cursor()
-    cur.execute("SELECT url FROM links_coletados WHERE tipo = 'categoria'")
-    categorias = [row[0] for row in cur.fetchall()]
-    print(f'Encontradas {len(categorias)} categorias para varrer.')
-    total_novos = 0
-    for url_categoria in categorias:
-        print(f'Coletando artigos da categoria: {url_categoria}')
-        page_num = 1
-        while True:
-            url_pagina = url_categoria
-            if page_num > 1:
-                url_pagina = url_categoria.rstrip('/') + f'/?page={page_num}'
-            html = await get_html_with_playwright(url_pagina)
-            soup = BeautifulSoup(html, "html.parser")
-            novos_links = set()
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                if href.startswith('/br/blog/') and not href.rstrip('/').split('/')[-1] in ['blog', 'noticias']:
-                    slug = href.rstrip('/').split('/')[-1]
-                    if slug not in [c.split('/')[-1] for c in categorias]:
-                        full_url = f'https://www.kommo.com{href}'
-                        novos_links.add(full_url)
-            # Salva novos links no banco
-            novos_inseridos = 0
-            for link in novos_links:
-                try:
-                    cur.execute('INSERT INTO links_coletados (url, tipo) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;', (link, 'conteudo'))
-                    novos_inseridos += cur.rowcount
-                except Exception as e:
-                    print(f'Erro ao inserir {link}: {e}')
-            conn.commit()
-            print(f'Página {page_num}: {len(novos_links)} links encontrados, {novos_inseridos} inseridos.')
-            total_novos += novos_inseridos
-            # Verifica se há paginação (se não encontrar novos links, para)
-            if not novos_links:
-                break
-            page_num += 1
-    cur.close()
-    conn.close()
-    print(f'Total de novos links de artigos inseridos a partir das categorias: {total_novos}')
+# --- Fluxo de Execução (FASE 1 - Coleta Bruta) ---
 
-async def main():
-    # Conecta e cria tabela
+async def fase_1_coleta_bruta():
+    """Executa a Fase 1: Coleta bruta e salvamento no BD com tipo 'pendente'."""
+    
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(CREATE_TABLE_SQL)
     conn.commit()
-    print('Tabela links_coletados pronta.')
-
-    # Coleta links da página principal
-    print('Coletando links de artigos e categorias...')
-    links = await extract_article_links()
-    print(f'Total de links encontrados: {len(links)}')
-
-    # Insere links no banco, ignorando duplicados
-    for link, tipo in links:
-        try:
-            cur.execute('INSERT INTO links_coletados (url, tipo) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;', (link, tipo))
-        except Exception as e:
-            print(f'Erro ao inserir {link}: {e}')
-    conn.commit()
-    print('Links salvos no banco.')
-
-    # Coleta links de artigos em todas as categorias
-    await extract_links_from_categories()
+    
+    print('Iniciando Fase 1: Coleta Bruta de links da página principal...')
+    
+    # Inicializa o Playwright e o Browser APENAS UMA VEZ
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        
+        # 1. Coleta de URLs
+        links_coletados = await extract_all_blog_links(page)
+        
+        inseridos = 0
+        
+        # 2. Inserção no Banco de Dados com TIPO_PADRAO
+        print(f'\n--- Inserindo {len(links_coletados)} links no BD com tipo="{TIPO_PADRAO}" ---')
+        for link in links_coletados:
+            
+            try:
+                # Insere URL e TIPO_PADRAO
+                cur.execute('INSERT INTO links_coletados (url, tipo) VALUES (%s, %s) ON CONFLICT (url) DO NOTHING;', (link, TIPO_PADRAO))
+                inseridos += cur.rowcount
+            except Exception as e:
+                print(f'Erro ao inserir {link}: {e}')
+                
+        conn.commit()
+        await browser.close()
+        
+        print(f'\nFase 1 Concluída. Total de links inseridos/atualizados: {inseridos}')
+        
     cur.close()
     conn.close()
 
+# --- Ponto de Entrada ---
+
 if __name__ == "__main__":
     import sys
+    
     if len(sys.argv) > 1 and sys.argv[1] == "todas":
-        asyncio.run(extract_links_from_all_categories())
-    elif len(sys.argv) > 1 and sys.argv[1].startswith("http"):
-        asyncio.run(extract_links_from_category(sys.argv[1]))
+        asyncio.run(fase_1_coleta_bruta())
+        print("\n--- Comandos para versionar no git ---")
+        print("git add core-oraculo-v2.0/escavadores/blog/coletar_links.py")
+        print("git commit -m 'feat: coleta bruta de links do blog sem classificação'")
+        print("git push")
     else:
-        print("Uso: python coletar_links.py todas | <url_categoria>")
+        print("Uso: python coletar_links.py todas")
